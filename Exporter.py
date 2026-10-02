@@ -205,9 +205,11 @@ def sanitize_filename(name: str) -> str:
     # I'm not sure how other unicode chars are handled
     # control chars aren't allowed either, and Windows drops trailing dots and spaces which could cause collisions
     with_replacement = re.sub(r'[:\\/*?<>|"\x00-\x1f]', ' ', name).rstrip('. ')
-    # names like CON or `NUL.txt` are reserved devices on Windows. Appending the hash below makes them safe
-    is_reserved = with_replacement.split('.')[0].strip().upper() in WINDOWS_RESERVED_NAMES
-    if name == with_replacement and not is_reserved:
+    # names like CON or `NUL.txt` are reserved devices on Windows, whatever comes after the first dot,
+    # so prefix them rather than relying on the hash suffix below
+    if with_replacement.split('.')[0].strip().upper() in WINDOWS_RESERVED_NAMES:
+        with_replacement = f'_{with_replacement}'
+    if name == with_replacement:
         return name
     log(f'filename `{name}` contained bad chars, replacing by `{with_replacement}`')
     hash = hashlib.sha256(name.encode()).hexdigest()[:8]
