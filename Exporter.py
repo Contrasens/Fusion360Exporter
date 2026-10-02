@@ -484,12 +484,15 @@ def main(ctx: Ctx) -> Counter:
             if project.rootFolder.id in folder_ids:
                 counter += visit_folder(ctx, project.rootFolder, recurse=False)
 
+            # put selected folders under the root folder like a whole project export does. Otherwise they
+            # end up directly in the export directory, where two projects' folders with the same name collide
+            root_ctx = ctx.extend(sanitize_filename(project.rootFolder.name))
             folders = project.rootFolder.dataFolders
             # hmm this doesn't work, the itemsById doesn't return the folder
             # for folder_id in folder_ids:
             #     counter += visit_folder(ctx, folders.itemById(folder_id))
             for folder in filter(lambda x: x.id in folder_ids, folders):
-                counter += visit_folder(ctx, folder)
+                counter += visit_folder(root_ctx, folder)
 
     return counter
 
