@@ -127,6 +127,9 @@ class LazyDocument:
         if self._document is not None:
             return
         existing = find_open_document(self._ctx.app, self.file)
+        if existing is not None and existing.isModified:
+            # exporting it would save the unsaved edits under this version's name, and later runs would skip it
+            raise Exception(f'`{self.file.name}` v{self.file.versionNumber} is open with unsaved changes, save or close it and run again')
         if existing is not None:
             log(f'`{self.file.name}` v{self.file.versionNumber} is already open, using it and leaving it open')
             self._document = existing
