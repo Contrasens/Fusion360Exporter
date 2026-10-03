@@ -342,7 +342,14 @@ def export_file(ctx: Ctx, format: Format, doc: LazyDocument) -> Counter:
                 with zf.open('FusionAssetName[Active]/Previews/small.png', 'w') as fh:
                     fh.write(base64.b64decode(thumb_b64))
 
-    write_atomically(output_path, write)
+    try:
+        write_atomically(output_path, write)
+    except RuntimeError as e:
+        # eg a design with no solid bodies, there is nothing to mesh so this isn't something a rerun will fix
+        if format in (Format.STL, Format.TMF) and 'invalid geometry' in str(e):
+            log(f'Skipping {format.value} for `{doc.file.name}` v{doc.file.versionNumber}, Fusion has no geometry it can mesh ({e})')
+            return Counter(skipped=1)
+        raise
     # set after the thumbnail is added since appending to the zip resets mtime
     set_mtime(output_path, doc.file.dateModified)
     log(f'Saved {output_path}')
