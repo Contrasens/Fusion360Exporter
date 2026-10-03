@@ -597,7 +597,8 @@ def main(ctx: Ctx) -> Counter:
     ctx = ctx._replace(folder=init_directory(ctx.folder))
     init_logging(ctx.folder)
 
-    log(ctx.dumps())
+    # without a timestamp so the JSON can be copied straight into a UserScripts template
+    print(ctx.dumps(), file=log_fh)
 
     # set from ctx (not just the UI) so saved settings scripts name files the same way as the UI run did
     global VERSION_SEPARATOR
