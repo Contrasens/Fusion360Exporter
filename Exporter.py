@@ -2,7 +2,7 @@ import adsk.core
 import adsk.drawing
 import traceback
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import NamedTuple, List, Set, Dict
 from enum import Enum, StrEnum
 from dataclasses import dataclass
@@ -36,7 +36,8 @@ project_folders_d = {} # {f'{project.name}/{folder.name}': (project.id, folder.i
 last_settings_path = Path(__file__).parent / 'last_settings.json'
 
 def log(*args):
-    print(*args, file=log_fh)
+    # timestamped so a log shows where a run spends its time
+    print(f'{datetime.now():%H:%M:%S}', *args, file=log_fh)
     log_fh.flush()
 
 def init_directory(name):
@@ -630,11 +631,14 @@ def run_main(ctx):
     try:
         app = adsk.core.Application.get()
         ui = app.userInterface
+        start = datetime.now()
         counter = main(ctx)
+        took = datetime.now() - start
         summary = '\n'.join((
             f'Saved {counter.saved} files',
             f'Skipped {counter.skipped} files',
             f'Encountered {counter.errored} errors',
+            f'Took {took - timedelta(microseconds=took.microseconds)}',
             f'Log file is at {log_file}'
         ))
         log(summary)
