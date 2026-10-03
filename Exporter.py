@@ -202,7 +202,22 @@ def find_open_document(app: adsk.core.Application, file: adsk.core.DataFile):
     return None
 
 def design_from_document(document: adsk.core.Document):
-    return adsk.fusion.FusionDocument.cast(document).design
+    try:
+        return adsk.fusion.FusionDocument.cast(document).design
+    except Exception as e:
+        first_error = e
+    # some documents (seen with Simulation documents) raise InternalValidationError above but may still
+    # have a design product
+    try:
+        design = adsk.fusion.Design.cast(document.products.itemByProductType('DesignProductType'))
+        if design is not None:
+            return design
+    except Exception:
+        pass
+    raise DesignUnavailable(f'Fusion could not provide its design ({first_error})')
+
+class DesignUnavailable(Exception):
+    pass
 
 def unhide_all_in_document(document: adsk.core.Document):
     unhide_all_in_component(design_from_document(document).rootComponent)
@@ -423,6 +438,21 @@ def export_drawing(ctx: Ctx, format: Format, doc: LazyDocument) -> Counter:
     return Counter(saved=1)
 
 
+def download_f3d(ctx: Ctx, file: adsk.core.DataFile) -> Counter:
+    """Fallback for when the design can't be opened: Fusion can still download the f3d as it is stored"""
+    output_path = export_filename(ctx, file, Format.F3D)
+    if output_path_exists(output_path, file):
+        return Counter(skipped=1)
+    try:
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        write_atomically(output_path, lambda path_s: file.download(path_s, None))
+        set_mtime(output_path, file.dateModified)
+        log(f'Saved {output_path} by downloading it as stored, without a thumbnail')
+        return Counter(saved=1)
+    except Exception:
+        log(traceback.format_exc())
+        return Counter(errored=1)
+
 def visit_file(ctx: Ctx, file: adsk.core.DataFile) -> Counter:
     log(f'Visiting file {file.name} v{file.versionNumber}.{file.fileExtension}')
 
@@ -457,10 +487,16 @@ def visit_file(ctx: Ctx, file: adsk.core.DataFile) -> Counter:
         return counter
 
     with LazyDocument(ctx, file) as doc:
+        design_error_counted = False
 
         if ctx.save_sketches and file.fileExtension != 'f2d':
             doc.open()
-            counter += visit_sketches(ctx.extend(sanitize_filename(doc.rootComponent.name)), doc, doc.rootComponent)
+            try:
+                counter += visit_sketches(ctx.extend(sanitize_filename(doc.rootComponent.name)), doc, doc.rootComponent)
+            except DesignUnavailable as e:
+                log(f"Can't export sketches of `{file.name}` v{file.versionNumber}: {e}")
+                counter.errored += 1
+                design_error_counted = True
 
         if file.fileExtension == 'f2d' and Format.PDF in ctx.formats:
             try:
@@ -475,6 +511,16 @@ def visit_file(ctx: Ctx, file: adsk.core.DataFile) -> Counter:
                     continue
                 try:
                     counter += export_file(ctx, format, doc)
+                except DesignUnavailable as e:
+                    log(f"Can't export `{file.name}` v{file.versionNumber}: {e}")
+                    remaining = ctx.formats[ctx.formats.index(format):]
+                    if Format.F3D in remaining:
+                        counter += download_f3d(ctx, file)
+                    # every other format needs the design, so count one error for them instead of one per format
+                    if not design_error_counted and any(f not in (Format.F3D, Format.PDF) for f in remaining):
+                        log(f'Skipping the other formats of `{file.name}` v{file.versionNumber}')
+                        counter.errored += 1
+                    break
                 except Exception:
                     counter.errored += 1
                     log(traceback.format_exc())
